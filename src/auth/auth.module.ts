@@ -6,6 +6,7 @@ import { getJwtSecret } from '../common/config/jwt-secret';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginRateLimitGuard } from './guards/login-rate-limit.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -16,12 +17,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         secret: getJwtSecret(config),
-        signOptions: { expiresIn: '7d' },
+        signOptions: { expiresIn: '15m' },
       }),
       inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, LoginRateLimitGuard],
 })
 export class AuthModule {}

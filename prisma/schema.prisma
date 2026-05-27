@@ -7,13 +7,144 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum PreferredCurrency {
+  BRL
+  USD
+  EUR
+}
+
+enum CatalogAssetType {
+  ACAO_BR
+  FII
+  ETF_BR
+  STOCK_US
+  ETF_US
+  ETF_INTL
+  CRYPTO
+}
+
+enum TransactionType {
+  BUY
+  SELL
+}
+
 model User {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                String            @id @default(uuid())
+  name              String
+  email             String            @unique
+  passwordHash      String            @map("password_hash")
+  avatarUrl         String?           @map("avatar_url")
+  preferredCurrency PreferredCurrency @default(BRL) @map("preferred_currency")
+  status            UserStatus        @default(ACTIVE)
+  lastLoginAt       DateTime?         @map("last_login_at")
+  deletedAt         DateTime?         @map("deleted_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  preferences UserPreferences?
+  wallets     Wallet[]
 
   @@map("users")
+}
+
+model UserPreferences {
+  id                   String            @id @default(uuid())
+  userId               String            @unique @map("user_id")
+  theme                String            @default("system")
+  defaultCurrency      PreferredCurrency @default(BRL) @map("default_currency")
+  notificationsEnabled Boolean           @default(true) @map("notifications_enabled")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model Asset {
+  id        String    @id @default(uuid())
+  ticker    String    @unique
+  name      String
+  type      CatalogAssetType
+  exchange  String?
+  currency  PreferredCurrency @default(BRL)
+  sector    String?
+  country   String?
+  logoUrl   String?   @map("logo_url")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  walletAssets WalletAsset[]
+  transactions Transaction[]
+
+  @@index([type])
+  @@index([name])
+  @@map("asset_catalog")
+}
+
+model ExchangeRate {
+  id        String            @id @default(uuid())
+  from      PreferredCurrency
+  to        PreferredCurrency
+  rate      Decimal           @db.Decimal(18, 8)
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  @@unique([from, to])
+  @@map("exchange_rates")
+}
+
+model Wallet {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  name        String
+  description String?
+  isArchived  Boolean   @default(false) @map("is_archived")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAssets WalletAsset[]
+  transactions Transaction[]
+
+  @@index([userId])
+  @@map("wallets")
+}
+
+model WalletAsset {
+  id         String   @id @default(uuid())
+  walletId   String   @map("wallet_id")
+  assetId    String   @map("asset_id")
+  quantity   Decimal  @db.Decimal(18, 8)
+  avgPrice   Decimal  @map("avg_price") @db.Decimal(18, 8)
+  purchaseAt DateTime @map("purchase_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id])
+
+  @@unique([walletId, assetId])
+  @@map("wallet_assets")
+}
+
+model Transaction {
+  id        String          @id @default(uuid())
+  walletId  String          @map("wallet_id")
+  assetId   String          @map("asset_id")
+  type      TransactionType
+  quantity  Decimal         @db.Decimal(18, 8)
+  price     Decimal         @db.Decimal(18, 8)
+  fee       Decimal         @default(0) @db.Decimal(18, 8)
+  date      DateTime
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id])
+
+  @@index([walletId, date])
+  @@map("transactions")
 }

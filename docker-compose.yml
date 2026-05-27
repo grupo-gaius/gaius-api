@@ -16,6 +16,16 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build: .
     ports:
@@ -23,9 +33,13 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/gaius?schema=public
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      BRAPI_TOKEN: ${BRAPI_TOKEN:-}
       PORT: 3000
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:
