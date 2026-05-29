@@ -29,13 +29,13 @@ services:
   app:
     build: .
     ports:
-      - '3000:3000'
+      - '8080:8080'
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/gaius?schema=public
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       BRAPI_TOKEN: ${BRAPI_TOKEN:-}
-      PORT: 3000
+      PORT: 8080
     depends_on:
       db:
         condition: service_healthy
