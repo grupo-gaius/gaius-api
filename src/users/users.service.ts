@@ -24,11 +24,17 @@ export class UsersService {
   async create(data: {
     name: string;
     email: string;
-    passwordHash: string;
+    passwordHash?: string | null;
+    googleSub?: string | null;
+    avatarUrl?: string | null;
   }): Promise<User> {
     return this.prisma.user.create({
       data: {
-        ...data,
+        name: data.name,
+        email: data.email,
+        passwordHash: data.passwordHash ?? null,
+        googleSub: data.googleSub ?? null,
+        avatarUrl: data.avatarUrl ?? null,
         preferences: { create: {} },
       },
     });
@@ -38,6 +44,35 @@ export class UsersService {
     return this.prisma.user.findFirst({
       where: { email, deletedAt: null },
     });
+  }
+
+  async findByGoogleSub(googleSub: string): Promise<User | null> {
+    return this.prisma.user.findFirst({
+      where: { googleSub, deletedAt: null },
+    });
+  }
+
+  async linkGoogle(
+    id: string,
+    data: { googleSub: string; avatarUrl?: string | null; name?: string },
+  ): Promise<User> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      throw new NotFoundException('User not found');
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        googleSub: data.googleSub,
+        ...(data.avatarUrl && !existing.avatarUrl
+          ? { avatarUrl: data.avatarUrl }
+          : {}),
+        ...(data.name && !existing.name ? { name: data.name } : {}),
+      },
+    });
+    await this.invalidateCache(id);
+    return user;
   }
 
   async findById(id: string): Promise<User | null> {

@@ -2,16 +2,20 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { createHash, randomBytes, randomUUID } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { MailService } from '../mail/mail.service';
 import { UsersService } from '../users/users.service';
 import { RedisService } from '../redis/redis.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LogoutDto } from './dto/logout.dto';
@@ -29,12 +33,26 @@ const PASSWORD_RESET_TTL_SECONDS = 60 * 30;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly googleClient: OAuth2Client;
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly redis: RedisService,
     private readonly mail: MailService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    const googleClientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    this.googleClient = new OAuth2Client(googleClientId);
+    if (googleClientId) {
+      this.logger.log('GOOGLE_CLIENT_ID ok — POST /auth/google habilitado');
+    } else {
+      this.logger.warn(
+        'GOOGLE_CLIENT_ID ausente — POST /auth/google vai responder 400',
+      );
+    }
+  }
 
   async register(dto: RegisterDto): Promise<RegisterResponseDto> {
     const existing = await this.usersService.findByEmail(dto.email);
@@ -101,13 +119,72 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<LoginResponseDto> {
     const user = await this.usersService.findByEmail(dto.email.toLowerCase());
-    if (!user) {
+    if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Invalid credentials');
     }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    await this.usersService.updateLastLogin(user.id);
+    const tokens = await this.issueTokens(user.id);
+    return plainToInstance(LoginResponseDto, tokens, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  async loginWithGoogle(dto: GoogleLoginDto): Promise<LoginResponseDto> {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new BadRequestException('Google login is not configured');
+    }
+
+    let payload: {
+      sub?: string;
+      email?: string;
+      email_verified?: boolean | string;
+      name?: string;
+      picture?: string;
+    };
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: dto.idToken,
+        audience: clientId,
+      });
+      payload = ticket.getPayload() ?? {};
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+
+    const googleSub = payload.sub;
+    const email = payload.email?.toLowerCase();
+    const emailVerified =
+      payload.email_verified === true || payload.email_verified === 'true';
+
+    if (!googleSub || !email || !emailVerified) {
+      throw new UnauthorizedException('Google account email is not verified');
+    }
+
+    let user = await this.usersService.findByGoogleSub(googleSub);
+    if (!user) {
+      const byEmail = await this.usersService.findByEmail(email);
+      if (byEmail) {
+        user = await this.usersService.linkGoogle(byEmail.id, {
+          googleSub,
+          avatarUrl: payload.picture ?? null,
+          name: payload.name,
+        });
+      } else {
+        user = await this.usersService.create({
+          name: payload.name?.trim() || email.split('@')[0],
+          email,
+          passwordHash: null,
+          googleSub,
+          avatarUrl: payload.picture ?? null,
+        });
+      }
+    }
+
     await this.usersService.updateLastLogin(user.id);
     const tokens = await this.issueTokens(user.id);
     return plainToInstance(LoginResponseDto, tokens, {
