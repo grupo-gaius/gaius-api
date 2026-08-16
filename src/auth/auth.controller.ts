@@ -14,6 +14,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtPayloadUser } from '../common/interfaces/jwt-payload-user.interface';
 import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LogoutDto } from './dto/logout.dto';
@@ -48,6 +49,20 @@ export class AuthController {
   @ApiTooManyRequestsResponse({ description: 'Máx. 10 tentativas / 15min por IP' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Public()
+  @Post('google')
+  @ApiOperation({
+    summary: 'Login com Google',
+    description:
+      'Troca o idToken do Google por accessToken + refreshToken do Gaius. ' +
+      'Cria o usuário se não existir; vincula googleSub se o e-mail já estiver cadastrado.',
+  })
+  @ApiOkResponse({ type: LoginResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token Google inválido ou e-mail não verificado' })
+  loginWithGoogle(@Body() dto: GoogleLoginDto) {
+    return this.authService.loginWithGoogle(dto);
   }
 
   @Public()

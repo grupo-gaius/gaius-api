@@ -38,7 +38,8 @@ model User {
   id                String            @id @default(uuid())
   name              String
   email             String            @unique
-  passwordHash      String            @map("password_hash")
+  passwordHash      String?           @map("password_hash")
+  googleSub         String?           @unique @map("google_sub")
   avatarUrl         String?           @map("avatar_url")
   preferredCurrency PreferredCurrency @default(BRL) @map("preferred_currency")
   status            UserStatus        @default(ACTIVE)
